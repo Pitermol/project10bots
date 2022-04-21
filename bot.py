@@ -43,38 +43,36 @@ def start_message(message):
     f.close()
     # bot.send_media_group(message.chat.id, [telebot.types.InputMediaPhoto(open('image0.jpg', 'rb'), caption="text"),
     #                                        telebot.types.InputMediaPhoto(open('image1.jpg', 'rb'))])
-    keyboard = telebot.types.ReplyKeyboardMarkup(True)
-    keyboard.row('Создать объявление', 'Посмотреть объявления')
-    send = bot.send_message(message.chat.id, '''Добро пожаловать в чат Бот "Название".
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Создать объявление", callback_data='create_offer'))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Посмотреть объявления", callback_data='watch_offers'))
+    bot.send_message(message.chat.id, '''Добро пожаловать в чат Бот "Название".
                                 Размещение рекламного объявления в данной системе платное, стоимость одного рекламного объявления составляет  10 рублей. Срок размещения объявления 5 дней.
                                 «ВАЖНО» Надо как то сделать , по истечению 5 дней как то уведомлять клиента что срок его заканчив
                                 ается если это возможно конечно.
                                 Получить информацию вы можете отправив /help
                                 Отправь /start что бы вернуться на главную.''', reply_markup=keyboard)
-    bot.register_next_step_handler(send, start_func)
 
 
-@bot.message_handler(content_type=['text'])
-def start_func(message):
-    if message.text == 'Посмотреть объявления':
-        checking_adverts(message)
-    elif message.text == 'Создать объявление' or message.text == 'Заполнить заново':
+@bot.callback_query_handler(func=lambda call: call.data == "create_offer")
+def start_creation(call):
+    with open("users.json", "r", encoding="utf-8") as f:
+        users = json.load(f)
+    f.close()
+    hash_object = hashlib.sha256(str(time.time()).encode("utf-8")).hexdigest()[-13:]
+    users[str(call.message.chat.id)]["creating"] = {"offer_id": hash_object, "name": None, "category": None, "title": None,
+                                               "description": None, "city": None, "address": None,
+                                               "phone": None, "price": None, "photos": []}
+    with open("users.json", "w") as f:
+        json.dump(users, f)
+    f.close()
+    send = bot.send_message(call.essage.chat.id, 'Введите ваше имя')
+    bot.register_next_step_handler(send, category)
 
-        with open("users.json", "r", encoding="utf-8") as f:
-            users = json.load(f)
-        f.close()
-        hash_object = hashlib.sha256(str(time.time()).encode("utf-8")).hexdigest()[-13:]
-        users[str(message.chat.id)]["creating"] = {"offer_id": hash_object, "name": None, "category": None, "title": None,
-                                                   "description": None, "city": None, "address": None,
-                                                   "phone": None, "price": None, "photos": []}
-        with open("users.json", "w") as f:
-            json.dump(users, f)
-        f.close()
-        send = bot.send_message(message.chat.id, 'Введите ваше имя')
-        bot.register_next_step_handler(send, category)
-    else:
-        send = bot.send_message(message.chat.id, 'Ошибка! Неверная команда')
-        bot.register_next_step_handler(send, start_func)
+
+@bot.callback_query_handler(func=lambda call: call.data == "watch_offers")
+def start_watching(call):
+    checking_adverts(call.message)
 
 
 def checking_adverts(message):
@@ -87,7 +85,7 @@ def checking_adverts(message):
     keyboard.add(telebot.types.InlineKeyboardButton(text="Предложение услуг", callback_data="Предложение услуг1"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Электроника", callback_data="Электроника1"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Готовый бизнес", callback_data="Готовый бизнес1"))
-    send = bot.send_message(message.chat.id, 'Выберите интересующую вас категорию', reply_markup=keyboard)
+    bot.send_message(message.chat.id, 'Выберите интересующую вас категорию', reply_markup=keyboard)
 
 
 def category(message):
@@ -107,7 +105,7 @@ def category(message):
     keyboard.add(telebot.types.InlineKeyboardButton(text="Предложение услуг", callback_data="Предложение услуг"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Электроника", callback_data="Электроника"))
     keyboard.add(telebot.types.InlineKeyboardButton(text="Готовый бизнес", callback_data="Готовый бизнес"))
-    send = bot.send_message(message.chat.id, 'Выберите интересующую вас категорию', reply_markup=keyboard)
+    bot.send_message(message.chat.id, 'Выберите интересующую вас категорию', reply_markup=keyboard)
 
 
 @bot.callback_query_handler(func=lambda call: call.data in all_categories1)
@@ -120,9 +118,9 @@ def watching_adverts(call):
     f.close()
     cat = call.data[:-1]
     if cat in categories:
-        users[str(call.message.chat.id)]["watching"] = -1
         offers = categories[cat]
-        creation = offers[users[str(call.message.chat.id)]["watching"]]
+        users[str(call.message.chat.id)]["watching"] = [-1, cat, offers]
+        creation = offers[users[str(call.message.chat.id)]["watching"][0]]
         confirm = f"\nг. {creation['city']}\n{creation['address']}\n\nЗаголовок:\n{creation['title']}\n\n" \
                   f"Описание:\n{creation['description']}\n\n📞 " \
                   f"{''.join(creation['phone'].split())}\n\n" \
@@ -131,15 +129,11 @@ def watching_adverts(call):
             json.dump(users, f)
         f.close()
 
-        keyboard = telebot.types.ReplyKeyboardMarkup(True)
-        keyboard.row('Далее', 'Обновить объявления')
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(telebot.types.InlineKeyboardButton(text="Далее", callback_data='watch_next_offer'))
+        keyboard.add(telebot.types.InlineKeyboardButton(text="Обновить объявления", callback_data='update_offers'))
         print(offers)
-        send = bot.send_message(call.message.chat.id, confirm, reply_markup=keyboard)
-        bot.register_next_step_handler(send, checking_function, offers)
-
-        # Добавить кнопки (Далее, Обновить)
-        # Далее - в функцию next_offer
-        # Обновить - Снова функцию watching_adverts
+        bot.send_message(call.message.chat.id, confirm, reply_markup=keyboard)
     else:
         bot.send_message(call.message.chat.id, 'Тут пока ничего нет. Загляните позже')
         try:
@@ -170,13 +164,22 @@ def watching_adverts(call):
                                           reply_markup=keyboard)
 
 
-def checking_function(message, offers):
-    if message.text == 'В главное меню':
-        start_message(message)
-    elif message.text == 'Обновить объявления':
-        checking_adverts(message)
-    else:
-        next_offer(message, offers)
+@bot.callback_query_handler(func=lambda call: call.data == "update_offers")
+def update_offers(call):
+    checking_adverts(call.message)
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "watch_next_offer")
+def update_offers(call):
+    with open("users.json", "r") as f:
+        users = json.load(f)
+    f.close()
+    next_offer(call.message, users[str(call.message.chat.id)]["watching"][2])
+
+
+@bot.callback_query_handler(func=lambda call: call.data == "to_main_menu")
+def to_main_menu(call):
+    start_message(call.message)
 
 
 def next_offer(message, offers):
@@ -252,7 +255,7 @@ def description(message):
     keyboard = telebot.types.InlineKeyboardMarkup()
     for i in cities:
         keyboard.add(telebot.types.InlineKeyboardButton(text=i, callback_data=i))
-    send = bot.send_message(message.chat.id, 'Выберите ваш город', reply_markup=keyboard)
+    bot.send_message(message.chat.id, 'Выберите ваш город', reply_markup=keyboard)
 
 
 @bot.callback_query_handler(func=lambda call: call.data in cities)
@@ -301,29 +304,29 @@ def price(message):
     with open("users.json", "w") as f:
         json.dump(users, f)
     f.close()
-    keyboard = telebot.types.ReplyKeyboardMarkup(True)
-    keyboard.row('Готово')
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Готово", callback_data='sending_done'))
     bot.send_message(message.chat.id, "Пришлите до 4-ех фотографий вашего продукта", reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda x: x.text == "Готово")
-def ready(message):
+@bot.callback_query_handler(func=lambda call: call.data == "sending_done")
+def ready(call):
     print("ready pressed")
     with open("users.json", "r") as f:
         users = json.load(f)
     f.close()
-    if users[str(message.chat.id)]['creating'] is not None:
-        check(message)
+    if users[str(call.message.chat.id)]['creating'] is not None:
+        check(call.message)
 
 
-def check(message):
+def check(call):
     with open("users.json", "r") as f:
         users = json.load(f)
     f.close()
     with open("categories.json", "r") as f:
         categories = json.load(f)
     f.close()
-    creation = users[str(message.chat.id)]['creating']
+    creation = users[str(call.message.chat.id)]['creating']
     # -------------------
     # cat = creation["category"]
     # del creation["category"]
@@ -339,14 +342,15 @@ def check(message):
     #     json.dump(categories, f)
     # f.close()
     # ------------------
-    keyboard = telebot.types.ReplyKeyboardMarkup(True)
-    keyboard.row('Подтвердить', 'Заполнить заново')
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Подтвердить", callback_data='confirm_form'))
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Заполнить заново", callback_data='confirm_adding'))
     confirm = f"\nг. {creation['city']}\n{creation['address']}\n\nЗаголовок:\n{creation['title']}\n\n" \
               f"Описание:\n{creation['description']}\n\n📞 " \
               f"{''.join(creation['phone'].split())}\n\n" \
               f"Написать продавцу"
     if len(creation['photos']) == 0:
-        bot.send_message(message.chat.id, confirm, reply_markup=keyboard)
+        bot.send_message(call.message.chat.id, confirm, reply_markup=keyboard)
     else:
         photos = []
         for i, name in enumerate(creation['photos']):
@@ -354,22 +358,20 @@ def check(message):
                 photos.append(telebot.types.InputMediaPhoto(open('images/' + name, 'rb'), caption=confirm))
             else:
                 photos.append(telebot.types.InputMediaPhoto(open('images/' + name, 'rb')))
-        bot.send_media_group(message.chat.id, photos)
-    send = bot.send_message(message.chat.id, "Сохранить?", reply_markup=keyboard)
-    bot.register_next_step_handler(send, payment, creation)
+        bot.send_media_group(call.message.chat.id, photos)
+    bot.send_message(call.message.chat.id, "Сохранить?", reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda x: x.text == "Подтвердить")
-def payment(message, creation):
+@bot.callback_query_handler(func=lambda call: call.data == "confirm_form")
+def payment(call):
     with open("users.json", "r") as f:
         users = json.load(f)
     f.close()
-    users[str(message.chat.id)]['creating'] = None
+    creation = users[str(call.message.chat.id)]['creating']
+    users[str(call.message.chat.id)]['creating'] = None
     with open("users.json", "w") as f:
         json.dump(users, f)
     f.close()
-
-    message_id = message.message_id
 
     quickpay = Quickpay(
         receiver="4100117780986446",
@@ -379,14 +381,18 @@ def payment(message, creation):
         sum=2,
         label=creation["offer_id"]
     )
-    keyboard = telebot.types.ReplyKeyboardMarkup(True)
-    keyboard.row('Оплатил')
-    send = bot.send_message(message.chat.id, f"Ссылка для оплаты: {quickpay.base_url}", reply_markup=keyboard)
-    bot.register_next_step_handler(send, payment_confirm, creation["offer_id"], message_id, creation)
+    keyboard = telebot.types.InlineKeyboardMarkup()
+    keyboard.add(telebot.types.InlineKeyboardButton(text="Оплатил", callback_data='payment_done'))
+    bot.send_message(call.message.chat.id, f"Ссылка для оплаты: {quickpay.base_url}", reply_markup=keyboard)
 
 
-@bot.message_handler(func=lambda x: x.text == "Оплатил")
-def payment_confirm(message, offer_id, message_id, creation):
+@bot.callback_query_handler(func=lambda call: call.data == "payment_done")
+def payment_confirm(call):
+    with open("users.json", "r") as f:
+        users = json.load(f)
+    f.close()
+    creation = users[str(call.message.chat.id)]['creating']
+    offer_id = creation["offer_id"]
     client = Client(token_ym)
     history = client.operation_history(label=str(offer_id))
     operation = history.operations
@@ -402,9 +408,9 @@ def payment_confirm(message, offer_id, message_id, creation):
         with open("moderating.json", "r") as f:
             moderating = json.load(f)
         f.close()
-        senf = bot.send_message(message.chat.id, "Заявка отправлена на модерацию")
+        senf = bot.send_message(call.message.chat.id, "Заявка отправлена на модерацию")
         message_id = senf.message_id
-        moderating[offer_id] = [creation, message_id, message.chat.id]
+        moderating[offer_id] = [creation, message_id, call.message.chat.id]
         with open("moderating.json", "w") as f:
             json.dump(moderating, f)
         f.close()
@@ -415,9 +421,17 @@ def payment_confirm(message, offer_id, message_id, creation):
         keyboard = telebot.types.InlineKeyboardMarkup()
         keyboard.add(telebot.types.InlineKeyboardButton(text="Подтвердить", callback_data='confirm_adding'))
         bot.send_message("1156324879", confirm, reply_markup=keyboard)
+        with open("users.json", "r") as f:
+            users = json.load(f)
+        f.close()
+        users[str(call.message.chat.id)]['creating'] = None
+        with open("users.json", "w") as f:
+            json.dump(users, f)
+        f.close()
     else:
-        send = bot.send_message(message.chat.id, "Вы не совершили оплату")
-        bot.register_next_step_handler(send, payment_confirm, offer_id, message_id, creation)
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(telebot.types.InlineKeyboardButton(text="Оплатил", callback_data='payment_done'))
+        bot.send_message(call.message.chat.id, "Вы не совершили оплату", reply_markup=keyboard)
 
 
 @bot.callback_query_handler(func=lambda call: call.data == "confirm_adding")
@@ -497,9 +511,9 @@ def go(message, tag=''):
         with open("users.json", "w") as f:
             json.dump(users, f)
         f.close()
-        keyboard = telebot.types.ReplyKeyboardMarkup(True)
-        keyboard.row('Готово')
-        send = bot.send_message(message.chat.id, "Фотография загружена успешно", reply_markup=keyboard)
+        keyboard = telebot.types.InlineKeyboardMarkup()
+        keyboard.add(telebot.types.InlineKeyboardButton(text="Готово", callback_data='sending_done'))
+        bot.send_message(message.chat.id, "Фотография загружена успешно", reply_markup=keyboard)
 
 
 if __name__ == "__main__":
